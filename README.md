@@ -68,6 +68,12 @@ Start the server by running the following command:
 python server.py
 ```
 
+If you want to add proxy support:
+
+```bash
+python server.py --proxy=http://proxyhost:proxyport
+```
+
 Two endpoints are available:
 
 - `/cookies?url=<URL>&retries=<>`: This endpoint returns the cookies of the website (including the Cloudflare cookies).
@@ -101,6 +107,10 @@ Alternatively, you can skip `docker build` step, and run the container using pre
 ```bash
 docker run -p 8000:8000 ghcr.io/sarperavci/cloudflarebypassforscraping:latest
 ```
+
+Docker Container is running a supervisord daemon that runs tinyproxy and server.py, which is forced to use that proxy
+If you want to add an upstream proxy with authentication, which chrome does not support, edit tinyproxy.conf under docker/service/confg/tinyproxy.conf to your liking
+
 
 # What is this not?
 

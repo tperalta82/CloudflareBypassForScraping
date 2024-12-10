@@ -1,5 +1,5 @@
 # Use the official Ubuntu image as the base image
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Set environment variables to avoid interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
@@ -10,7 +10,8 @@ RUN apt-get update && \
     apt-get install -y \
         python3 \
         python3-pip \
-        wget \
+        python3-venv \
+        virtualenv \
         gnupg \
         ca-certificates \
         libx11-xcb1 \
@@ -30,6 +31,9 @@ RUN apt-get update && \
         libdrm2 \
         xdg-utils \
         xvfb \
+        wget \
+        tinyproxy \
+        supervisor \
         && rm -rf /var/lib/apt/lists/*
 
 # Add Google Chrome repository and install Google Chrome
@@ -39,12 +43,16 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
     apt-get install -y google-chrome-stable
 
 # Install Python dependencies including pyvirtualdisplay
-RUN pip3 install --upgrade pip
-RUN pip3 install pyvirtualdisplay
+
+COPY docker/service/conf/supervisor-app.conf /etc/supervisor/conf.d/
+COPY docker/service/conf/tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
 
 # Set up a working directory
 WORKDIR /app
-
+RUN python3 -m venv /app/venv
+ENV PATH=/app/venv/bin:$PATH
+RUN pip3 install --upgrade pip
+RUN pip3 install pyvirtualdisplay
 # Copy application files
 COPY . .
 
@@ -59,4 +67,4 @@ EXPOSE 9222
 EXPOSE 8000
 
 # Default command
-CMD ["python3", "server.py"]
+CMD ["supervisord", "-n"]

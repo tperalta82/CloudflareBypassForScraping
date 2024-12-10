@@ -55,7 +55,7 @@ def is_safe_url(url: str) -> bool:
 
 
 # Function to bypass Cloudflare protection
-def bypass_cloudflare(url: str, retries: int, log: bool) -> ChromiumPage:
+def bypass_cloudflare(url: str, retries: int, log: bool, proxy_host: None | str = None) -> ChromiumPage:
     from pyvirtualdisplay import Display
 
     if DOCKER_MODE:
@@ -64,6 +64,8 @@ def bypass_cloudflare(url: str, retries: int, log: bool) -> ChromiumPage:
         display.start()
 
         options = ChromiumOptions()
+        if proxy_host is not None:
+            options.set_argument(f"--proxy-server={proxy_host}")
         options.set_argument("--auto-open-devtools-for-tabs", "true")
         options.set_argument("--remote-debugging-port=9222")
         options.set_argument("--no-sandbox")  # Necessary for Docker
@@ -71,6 +73,8 @@ def bypass_cloudflare(url: str, retries: int, log: bool) -> ChromiumPage:
         options.set_paths(browser_path=browser_path).headless(False)
     else:
         options = ChromiumOptions()
+        if proxy_host is not None:
+            options.set_argument(f"--proxy-server={proxy_host}")
         options.set_argument("--auto-open-devtools-for-tabs", "true")
         options.set_paths(browser_path=browser_path).headless(False)
 
@@ -93,7 +97,7 @@ async def get_cookies(url: str, retries: int = 5):
     if not is_safe_url(url):
         raise HTTPException(status_code=400, detail="Invalid URL")
     try:
-        driver = bypass_cloudflare(url, retries, log)
+        driver = bypass_cloudflare(url, retries, log, proxy_host=proxy)
         cookies = driver.cookies(as_dict=True)
         user_agent = driver.user_agent
         driver.quit()
@@ -108,7 +112,7 @@ async def get_html(url: str, retries: int = 5):
     if not is_safe_url(url):
         raise HTTPException(status_code=400, detail="Invalid URL")
     try:
-        driver = bypass_cloudflare(url, retries, log)
+        driver = bypass_cloudflare(url, retries, log, proxy_host=proxy)
         html = driver.html
         cookies_json = json.dumps(driver.cookies(as_dict=True))
 
@@ -127,7 +131,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--nolog", action="store_true", help="Disable logging")
     parser.add_argument("--headless", action="store_true", help="Run in headless mode")
-
+    parser.add_argument("--proxy", type=str, help="Use a proxy server (format: socks5://localhost:1080)", required=False)   # noqa: E501
     args = parser.parse_args()
     if args.headless and not DOCKER_MODE:
         from pyvirtualdisplay import Display
@@ -138,6 +142,10 @@ if __name__ == "__main__":
         log = False
     else:
         log = True
+
+    proxy = None
+    if args.proxy:
+        proxy = args.proxy
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)

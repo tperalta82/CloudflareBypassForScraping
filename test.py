@@ -80,7 +80,7 @@ def main():
 
         logging.info("Enjoy the content!")
         logging.info("Title of the page: %s", driver.title)
-
+        logging.info("Page Content %s", driver.html)
         # Sleep for a while to let the user see the result if needed
         time.sleep(5)
     except Exception as e:
