@@ -66,5 +66,8 @@ EXPOSE 9222
 # Expose the port for the FastAPI server
 EXPOSE 8000
 
+# Expose TinyProxy Server Port
+EXPOSE 8888
+
 # Default command
 CMD ["supervisord", "-n"]
