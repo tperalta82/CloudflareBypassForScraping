@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
 from typing import Dict
 import argparse
+import atexit
 
 # Check if running in Docker mode
 DOCKER_MODE = os.getenv("DOCKERMODE", "false").lower() == "true"
@@ -29,10 +30,10 @@ arguments = [
     "-deny-permission-prompts",
     "-disable-gpu",
     "-accept-lang=en-US",
-    #"-incognito" # You can add this line to open the browser in incognito mode by default 
+    # "-incognito" # You can add this line to open the browser in incognito mode by default
 ]
 
-browser_path = "/usr/bin/google-chrome"
+browser_path = os.getenv("BROWSER_PATH", "/usr/bin/google-chrome")
 app = FastAPI()
 
 
@@ -55,28 +56,24 @@ def is_safe_url(url: str) -> bool:
 
 
 # Function to bypass Cloudflare protection
-def bypass_cloudflare(url: str, retries: int, log: bool, proxy_host: None | str = None) -> ChromiumPage:
-    from pyvirtualdisplay import Display
-
+def bypass_cloudflare(
+    url: str, retries: int, log: bool, proxy_host: None | str = None
+) -> ChromiumPage:
+    options = ChromiumOptions()
+    options.set_paths(browser_path=browser_path).headless(False)
     if DOCKER_MODE:
-        # Start Xvfb for Docker
-        display = Display(visible=0, size=(1920, 1080))
-        display.start()
-
-        options = ChromiumOptions()
         if proxy_host is not None:
             options.set_argument(f"--proxy-server={proxy_host}")
         options.set_argument("--auto-open-devtools-for-tabs", "true")
-        options.set_argument("--remote-debugging-port=9222")
+        # options.set_argument("--remote-debugging-port=9222")
         options.set_argument("--no-sandbox")  # Necessary for Docker
         options.set_argument("--disable-gpu")  # Optional, helps in some cases
-        options.set_paths(browser_path=browser_path).headless(False)
+        
     else:
         options = ChromiumOptions()
         if proxy_host is not None:
             options.set_argument(f"--proxy-server={proxy_host}")
         options.set_argument("--auto-open-devtools-for-tabs", "true")
-        options.set_paths(browser_path=browser_path).headless(False)
 
     driver = ChromiumPage(addr_or_opts=options)
     try:
@@ -86,7 +83,7 @@ def bypass_cloudflare(url: str, retries: int, log: bool, proxy_host: None | str 
         return driver
     except Exception as e:
         driver.quit()
-        if DOCKER_MODE:
+        if display and DOCKER_MODE:
             display.stop()  # Stop Xvfb
         raise e
 
@@ -98,7 +95,7 @@ async def get_cookies(url: str, retries: int = 5):
         raise HTTPException(status_code=400, detail="Invalid URL")
     try:
         driver = bypass_cloudflare(url, retries, log, proxy_host=proxy)
-        cookies = driver.cookies(as_dict=True)
+        cookies = {cookie.get("name", ""): cookie.get("value", " ") for cookie in driver.cookies()}
         user_agent = driver.user_agent
         driver.quit()
         return CookieResponse(cookies=cookies, user_agent=user_agent)
@@ -114,10 +111,10 @@ async def get_html(url: str, retries: int = 5):
     try:
         driver = bypass_cloudflare(url, retries, log, proxy_host=proxy)
         html = driver.html
-        cookies_json = json.dumps(driver.cookies(as_dict=True))
-
+        cookies_json = {cookie.get("name", ""): cookie.get("value", " ") for cookie in driver.cookies()}
+        
         response = Response(content=html, media_type="text/html")
-        response.headers["cookies"] = cookies_json
+        response.headers["cookies"] = json.dumps(cookies_json)
         response.headers["user_agent"] = driver.user_agent
         driver.quit()
         return response
@@ -131,13 +128,24 @@ if __name__ == "__main__":
 
     parser.add_argument("--nolog", action="store_true", help="Disable logging")
     parser.add_argument("--headless", action="store_true", help="Run in headless mode")
-    parser.add_argument("--proxy", type=str, help="Use a proxy server (format: socks5://localhost:1080)", required=False)   # noqa: E501
+    parser.add_argument(
+        "--proxy",
+        type=str,
+        help="Use a proxy server (format: socks5://localhost:1080)",
+        required=False,
+    )  # noqa: E501
     args = parser.parse_args()
-    if args.headless and not DOCKER_MODE:
+    if args.headless or DOCKER_MODE:
         from pyvirtualdisplay import Display
 
         display = Display(visible=0, size=(1920, 1080))
         display.start()
+
+        def cleanup_display():
+            if display:
+                display.stop()
+
+        atexit.register(cleanup_display)
     if args.nolog:
         log = False
     else:
