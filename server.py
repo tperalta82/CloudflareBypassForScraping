@@ -8,15 +8,23 @@ from DrissionPage import ChromiumPage, ChromiumOptions
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
 from typing import Dict
+from tempfile import gettempdir
+import traceback
 import argparse
 import atexit
 
 # Check if running in Docker mode
 DOCKER_MODE = os.getenv("DOCKERMODE", "false").lower() == "true"
 
+# Clear Cache Setting
+CLEAR_CACHE = os.getenv("CLEARCACHE", "false").lower() == "true"
+from pprint import pprint
+
+pprint(CLEAR_CACHE)
 # Chromium options arguments
 arguments = [
     # "--remote-debugging-port=9222",  # Add this line for remote debugging
+    "--disable-metrics",
     "-no-first-run",
     "-force-color-profile=srgb",
     "-metrics-recording-only",
@@ -55,6 +63,19 @@ def is_safe_url(url: str) -> bool:
     return True
 
 
+def clear_pma():
+    try:
+        path = f"{gettempdir()}/DrissionPage/userData_9222/BrowserMetrics"
+        if os.path.exists(path):
+            for filename in os.listdir(path):
+                file_path = os.path.join(path, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+    except Exception:
+        traceback.print_exc()
+        pass
+
+
 # Function to bypass Cloudflare protection
 def bypass_cloudflare(
     url: str, retries: int, log: bool, proxy_host: None | str = None
@@ -68,7 +89,7 @@ def bypass_cloudflare(
         # options.set_argument("--remote-debugging-port=9222")
         options.set_argument("--no-sandbox")  # Necessary for Docker
         options.set_argument("--disable-gpu")  # Optional, helps in some cases
-        
+
     else:
         options = ChromiumOptions()
         if proxy_host is not None:
@@ -95,7 +116,13 @@ async def get_cookies(url: str, retries: int = 5):
         raise HTTPException(status_code=400, detail="Invalid URL")
     try:
         driver = bypass_cloudflare(url, retries, log, proxy_host=proxy)
-        cookies = {cookie.get("name", ""): cookie.get("value", " ") for cookie in driver.cookies()}
+        if CLEAR_CACHE:
+            driver.clear_cache(cookies=False)
+        clear_pma()
+        cookies = {
+            cookie.get("name", ""): cookie.get("value", " ")
+            for cookie in driver.cookies()
+        }
         user_agent = driver.user_agent
         driver.quit()
         return CookieResponse(cookies=cookies, user_agent=user_agent)
@@ -111,8 +138,13 @@ async def get_html(url: str, retries: int = 5):
     try:
         driver = bypass_cloudflare(url, retries, log, proxy_host=proxy)
         html = driver.html
-        cookies_json = {cookie.get("name", ""): cookie.get("value", " ") for cookie in driver.cookies()}
-        
+        cookies_json = {
+            cookie.get("name", ""): cookie.get("value", " ")
+            for cookie in driver.cookies()
+        }
+        if CLEAR_CACHE:
+            driver.clear_cache(cookies=False)
+        clear_pma()
         response = Response(content=html, media_type="text/html")
         response.headers["cookies"] = json.dumps(cookies_json)
         response.headers["user_agent"] = driver.user_agent
