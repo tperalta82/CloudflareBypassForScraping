@@ -18,9 +18,8 @@ DOCKER_MODE = os.getenv("DOCKERMODE", "false").lower() == "true"
 
 # Clear Cache Setting
 CLEAR_CACHE = os.getenv("CLEARCACHE", "false").lower() == "true"
-from pprint import pprint
 
-pprint(CLEAR_CACHE)
+
 # Chromium options arguments
 arguments = [
     # "--remote-debugging-port=9222",  # Add this line for remote debugging
